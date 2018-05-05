@@ -71,12 +71,11 @@ inline bool _is_dummy(uint64_t f, uint64_t n, uint64_t k, uint64_t i) {
     return true;
 }
 
-std::vector<uint64_t> to_vector(uint64_t family, uint64_t k, uint64_t n) {
-    std::vector<uint64_t> v(n);
+void to_vector(uint64_t family, uint64_t k, uint64_t n, std::vector<uint64_t> &v) {
+    v.resize(n);
     for (auto i = 0; i < n; i++) {
         v[i] = extract(family, n, k, i);
     }
-    return v;
 }
 
 inline uint64_t ith(uint64_t x, uint64_t n, uint64_t i) {
