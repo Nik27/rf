@@ -167,23 +167,23 @@ static bool is_regular(uint64_t family, uint64_t n) {
     return true;
 }
 
-static void generate_fs(const uint64_t n, vector <uint64_t> &families) {
+static void generate_fs(const uint64_t n, vector <vector<uint64_t>> &families) {
     assert(1 <= n && n <= 3);
     families.clear();
     const uint64_t k = (1ul << n); // 2^n наборов для n переменных
-    const uint64_t m = (~0ul) >> (64u - k * n);
+    const uint64_t m = (~0ul) >> (64u - k * n); // Набор из k единиц
 
-    families.push_back(0);
-    for (uint64_t family = 1; family < m; family++) {
-        if (is_regular(family, n)) families.push_back(family);
+    families.push_back(to_vector(0, k, n));
+    for (uint64_t f = 1; f < m; f++) {
+        if (is_regular(f, n)) families.push_back(to_vector(f, k, n));
     }
-    families.push_back(m);
+    families.push_back(to_vector(m, k, n));
 }
 
 /**
  * Генерируем правильное семейство булевых функций F = {f_1, ..., f_n}
  */
-static void generate_f(const uint64_t n, vector <uint64_t> &v) {
+static vector <uint64_t> generate_f(const uint64_t n) {
     assert(n > 0);
     cout << "Generating " << to_string('F', 'f', n, n) << endl;
 
@@ -191,30 +191,28 @@ static void generate_f(const uint64_t n, vector <uint64_t> &v) {
     mt19937 mt(rd());
 
     if (n > 3) {
+        vector <uint64_t> v(n);
         uniform_int_distribution <uint64_t> d(0, 1);
-        v.resize(n);
         for (auto &f : v) f = d(mt) ? ~0ul : 0ul;
+        return v;
     }
 
-    vector <uint64_t> families;
+    vector <vector<uint64_t>> families;
     generate_fs(n, families);
 
-    uniform_int_distribution <uint64_t> distribution(0, families.size() - 1);
+    uniform_int_distribution <uint64_t> distribution(1, families.size());
 
     const auto i = distribution(mt);
-
-    cout << i + 1 << " of " << families.size() << endl;
-
-    const uint64_t k = 1ul << n;
-    to_vector(families[i], k, n, v);
+    cout << i << " of " << families.size() << endl;
+    return families[i - 1];
 }
 
-static void generate_p(const uint64_t n, vector <uint64_t> &p) {
+static vector <uint64_t> generate_p(const uint64_t n) {
     assert(n > 0);
     cout << "Generating " << to_string('P', 'p', n, 2) << endl;
 
-    p.resize(n);
-    const uint64_t m = (1ul << 2ul) - 1;
+    vector <uint64_t> p(n);
+    const uint64_t m = 3ul; // 0b11;
 
     random_device rd;
     mt19937 mt(rd());
@@ -222,6 +220,7 @@ static void generate_p(const uint64_t n, vector <uint64_t> &p) {
     for (auto i = 0; i < n; i++) {
         p[i] = distribution(mt);
     }
+    return p;
 }
 
 static void print(const Quasigroup &quasigroup, const vector <uint64_t> &subquasigroup, ostream &out = cout) {
@@ -307,10 +306,10 @@ static bool find_subquasigroup(const Quasigroup &quasigroup, const uint64_t k, v
 static void generate(Quasigroup &quasigroup, const uint64_t n) {
     assert(1 <= n && n <= 6);
     quasigroup.n = n;
-    generate_f(n, quasigroup.f);
+    quasigroup.f = generate_f(n);
     quasigroup.write_fs(cout, true);
     cout << endl;
-    generate_p(n, quasigroup.p);
+    quasigroup.p = generate_p(n);
     quasigroup.write_ps(cout, true);
     cout << endl;
 }
@@ -337,10 +336,12 @@ static void brute_force(uint64_t n, bool verbose) {
     assert(1 <= n && n <= 3);
     if (verbose) cout << "n = " << n << endl;
 
-    vector <uint64_t> families;
+    auto s = chrono::steady_clock::now();
+
+    vector <vector<uint64_t>> families;
     generate_fs(n, families);
 
-    if (verbose) cout << "Count of families: " << families.size() << endl;
+    if (verbose) cout << "Number of families: " << families.size() << endl;
 
     const uint64_t k = 1ul << n;
     const uint64_t m = 1ul << 4 * n;
@@ -350,10 +351,10 @@ static void brute_force(uint64_t n, bool verbose) {
     Quasigroup quasigroup;
     quasigroup.n = n;
     for (auto &family : families) {
-        to_vector(family, k, n, quasigroup.f);
+        quasigroup.f = family;
         for (uint64_t p = 0; p < m; p++) {
             to_vector(p, 4, n, quasigroup.p);
-            vector <uint64_t> r(3);
+            vector <uint64_t> r(n);
             for (uint64_t x = 0; x < k; x++) {
                 for (uint64_t y = 0; y < k; y++) {
                     for (uint64_t i = 0; i < n; i++) {
@@ -366,18 +367,40 @@ static void brute_force(uint64_t n, bool verbose) {
         }
     }
 
-    cout << quasigroups.size() << endl;
+    cout << "Number of quasigroups: " << quasigroups.size() << endl;
 
     quasigroup.f.clear();
     quasigroup.p.clear();
 
-    vector <uint64_t> results(k);
+
+    // Проверка на наличие подквазигруппы порядка 1 у квазигруппы порожденной парвильным семейством
+    // for (auto &r : quasigroups) {
+    //     quasigroup.r = r;
+    //     vector <set<uint64_t>> subquasigroups(k);
+    //     find_subquasigroup(quasigroup, 1, subquasigroups);
+    //
+    //     set <uint64_t> a_set;
+    //     for (uint64_t a = 0; a < k; a++) {
+    //         a_set.insert(a);
+    //     }
+    //
+    //     for (uint64_t i = 0; i < n; i++) {
+    //         for (uint64_t a = 0; a < k; a++) {
+    //             if (a_set.find(a) != a_set.end()) {
+    //                 if (quasigroup.g_i(a, a, i) != ith(a, n, i)) {
+    //                     a_set.erase(a);
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     cout << endl;
+    // }
+    //
+    // if (!0) return;
+
     vector <chrono::duration<double>> time(k);
-    vector <uint64_t> count_a(k);
+    vector <uint64_t> count_a(k); // Количество квазигрупп имеющих подквазигруппы порядка k
     vector <uint64_t> count_b(k);
-
-
-    auto s = chrono::steady_clock::now();
 
     for (auto &r : quasigroups) {
         quasigroup.r = r;
@@ -387,10 +410,7 @@ static void brute_force(uint64_t n, bool verbose) {
         for (int i = 1; i <= k / 2; i++) {
             if (!subquasigroups[i].empty()) {
                 count_a[i]++;
-                results[i] += subquasigroups[i].size();
             }
-        }
-        for (int i = 1; i <= k / 2; i++) {
             bool has_no_subquasigroups = true;
             for (int j = i; j <= k / 2; j++) {
                 if (!subquasigroups[j].empty()) {
@@ -404,12 +424,13 @@ static void brute_force(uint64_t n, bool verbose) {
 
     auto f = chrono::steady_clock::now();
 
-    cout << endl << "Elapsed time: " << chrono::duration_cast<chrono::milliseconds>(f - s).count() << "ms" << endl;
 
     for (auto i = 1; i <= k / 2; i++) {
-        cout << "k = " << i << "\t" << results[i] << "\t" << count_a[i] << "\t" << count_b[i] << "\t"
+        cout << "k = " << i << "\t" << count_a[i] << "\t" << count_b[i] << "\t"
              << chrono::duration_cast<chrono::milliseconds>(time[i]).count() << "ms." << endl;
     }
+
+    cout << endl << "Elapsed time: " << chrono::duration_cast<chrono::milliseconds>(f - s).count() << "ms" << endl;
 
 }
 
